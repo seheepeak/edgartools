@@ -62,10 +62,10 @@ class TestMakeSectionKeyValidity:
     def test_keeps_item_7_under_part_i_coarse_toc(self, tenk_analyzer):
         """Item 7 (canonical Part II) listed under a lone earlier Part I header.
 
-        This is a coarse TOC, not a back-reference — the detected key is kept so
-        a real section is not lost.
+        The real section is retained under its canonical key so pattern
+        detection cannot add it again under another Part.
         """
-        assert tenk_analyzer._make_section_key("Item 7", "Part I") == "part_i_item_7"
+        assert tenk_analyzer._make_section_key("Item 7", "Part I") == "part_ii_item_7"
 
     def test_keeps_item_1_under_part_i(self, tenk_analyzer):
         """The legitimate detection is unchanged."""
@@ -83,7 +83,7 @@ class TestMakeSectionKeyValidity:
     def test_part_label_format_tolerance(self, tenk_analyzer):
         """Ranking is on the roman numeral, not exact string form."""
         # bare roman, lowercase — same Part, still kept
-        assert tenk_analyzer._make_section_key("Item 1", "I") == "i_item_1"
+        assert tenk_analyzer._make_section_key("Item 1", "I") == "part_i_item_1"
         # later bare roman — still rejected as a back-reference
         assert tenk_analyzer._make_section_key("Item 1", "iv") is None
 

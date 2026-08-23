@@ -277,6 +277,10 @@ class HTMLParser:
 
         # Create document
         document = Document(root=root_node, metadata=metadata)
+        if self.config.track_source:
+            document.source_tree = tree
+            document._source_elements = builder.source_elements
+            document._source_order = builder.source_order
 
         return document
 

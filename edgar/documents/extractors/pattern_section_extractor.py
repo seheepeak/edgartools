@@ -688,10 +688,24 @@ class SectionExtractor:
         def _node_position(node: Node) -> int:
             return _pos_map.get(id(node), 0)
 
+        from edgar.documents.nodes import ParagraphNode
+
         # Strategy 1: Find all heading nodes (most reliable)
         heading_nodes = document.root.find(lambda n: isinstance(n, HeadingNode))
 
         for node in heading_nodes:
+            # Styled inline spans can look like headings even inside an explicit
+            # reference: "Also see <span>Risk factors</span> on page 67". Keep
+            # the paragraph's preceding words when deciding whether it is a
+            # candidate. This uses the node tree in both source-tracking modes.
+            if isinstance(node.parent, ParagraphNode):
+                preceding = []
+                for sibling in node.parent.children:
+                    if sibling is node:
+                        break
+                    preceding.append(sibling.text())
+                if re.search(r'\b(?:see|refer\s+to)\s*$', ' '.join(preceding), re.I):
+                    continue
             text = node.text()
             if text:
                 # Get position in document
@@ -1430,6 +1444,12 @@ class SectionExtractor:
                 node=section_node,
                 start_offset=start_pos,
                 end_offset=end_pos,
+                source_start=(document.source_position(walk[start_pos])
+                              if 0 <= start_pos < len(walk) else None),
+                source_end=(document.source_position(walk[end_pos])
+                            if 0 <= end_pos < len(walk) else
+                            len(document._source_elements) if start_pos >= 0 and document.source_tree is not None
+                            else None),
                 confidence=confidence,
                 detection_method=detection_method,
                 part=part,

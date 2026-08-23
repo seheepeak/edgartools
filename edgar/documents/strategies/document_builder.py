@@ -85,6 +85,9 @@ class DocumentBuilder:
         Returns:
             Document root node
         """
+        self.source_elements = list(tree.iter()) if self.config.track_source else []
+        self.source_order = {id(element): i for i, element in enumerate(self.source_elements)}
+
         # Create root document node
         root = DocumentNode()
 
@@ -170,6 +173,8 @@ class DocumentBuilder:
             node = self._create_node_for_element(element, style)
 
             if node:
+                if self.config.track_source:
+                    node.metadata['source_position'] = self.source_order[id(element)]
                 # Add XBRL metadata if in context
                 if self.xbrl_context_stack:
                     node.metadata.update(self._get_current_xbrl_metadata())

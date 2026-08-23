@@ -173,8 +173,8 @@ class TestWorkivaTOC:
         assert 'part_i_item_1' in result
         assert 'part_i_item_1a' in result
         assert 'part_i_item_1b' in result
-        assert 'part_i_item_7' in result
-        assert 'part_i_item_8' in result
+        assert 'part_ii_item_7' in result
+        assert 'part_ii_item_8' in result
 
     def test_uuid_anchors_mapped(self):
         result = self.analyzer._analyze_workiva_toc(WORKIVA_TOC_HTML)
@@ -244,8 +244,8 @@ class TestNovaworksTOC:
         assert 'part_i_item_1' in result
         assert 'part_i_item_1a' in result
         assert 'part_i_item_1c' in result
-        assert 'part_i_item_7' in result
-        assert 'part_i_item_8' in result
+        assert 'part_ii_item_7' in result
+        assert 'part_ii_item_8' in result
 
     def test_handles_shared_part_anchor(self):
         """Item 1 correctly maps even when it shares anchor with Part I."""
@@ -273,8 +273,8 @@ class TestToppanTOC:
         result = self.analyzer._analyze_toppan_toc(TOPPAN_TOC_HTML)
         assert 'part_i_item_1' in result
         assert 'part_i_item_1a' in result
-        assert 'part_i_item_7' in result
-        assert 'part_i_item_8' in result
+        assert 'part_ii_item_7' in result
+        assert 'part_ii_item_8' in result
 
     def test_descriptive_anchors_mapped(self):
         result = self.analyzer._analyze_toppan_toc(TOPPAN_TOC_HTML)

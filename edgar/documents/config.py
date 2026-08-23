@@ -42,6 +42,7 @@ class ParserConfig:
         enable_parallel: Enable parallel processing for tables
         strict_mode: Fail on parsing errors vs. best effort
         extract_xbrl: Extract inline XBRL facts
+        track_source: Retain the parsed DOM and explicit section element ordinals
         extract_styles: Extract and process CSS styles
         preserve_whitespace: Preserve original whitespace
         optimize_for_ai: Enable AI-specific optimizations
@@ -79,6 +80,7 @@ class ParserConfig:
 
     # Section detection
     detect_sections: bool = True
+    track_source: bool = False  # Retain the parsed DOM and explicit section source positions
     eager_section_extraction: bool = False  # Extract sections during parsing vs. on first access (default: lazy)
     form: Optional[str] = None  # Required for section detection (e.g. '10-K', '10-Q', '8-K')
     detection_thresholds: DetectionThresholds = field(default_factory=DetectionThresholds)

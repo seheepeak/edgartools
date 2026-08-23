@@ -2,6 +2,7 @@
 Markdown renderer for parsed documents.
 """
 
+import os
 from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin
 
@@ -36,13 +37,17 @@ class MarkdownRenderer:
             include_toc: Generate table of contents
             max_heading_level: Maximum heading level to render
             table_format: Table format ('pipe', 'grid', 'simple')
-            wrap_width: Wrap text at specified width
+            wrap_width: Wrap paragraphs at this width. When None, falls back to
+                the EDGAR_MARKDOWN_WRAP_WIDTH environment variable, so a caller
+                that never constructs the renderer itself -- Document.to_markdown()
+                and Section.markdown() both build their own -- can still ask for
+                wrapping. Unset or unreadable leaves it off.
         """
         self.include_metadata = include_metadata
         self.include_toc = include_toc
         self.max_heading_level = max_heading_level
         self.table_format = table_format
-        self.wrap_width = wrap_width
+        self.wrap_width = wrap_width if wrap_width is not None else self._wrap_width_from_env()
 
         # Track state during rendering
         self._toc_entries: List[tuple] = []
@@ -51,6 +56,15 @@ class MarkdownRenderer:
         self._in_table = False
         # Base URL for resolving relative image src (set per-document in render())
         self._base_url: Optional[str] = None
+
+    @staticmethod
+    def _wrap_width_from_env() -> Optional[int]:
+        """EDGAR_MARKDOWN_WRAP_WIDTH, or None when unset or not a positive number."""
+        raw = os.environ.get('EDGAR_MARKDOWN_WRAP_WIDTH', '').strip()
+        if not raw.isdigit():
+            return None
+        width = int(raw)
+        return width if width > 0 else None
 
     def render(self, document: Document) -> str:
         """
@@ -286,6 +300,15 @@ class MarkdownRenderer:
             # Add separator
             separator = "| " + " | ".join(["---"] * len(filtered_headers)) + " |"
             rows.append(separator)
+        else:
+            # No header row, but GFM has no table without a delimiter row, and a
+            # reader that finds none reads the pipes as text. Filings are full of
+            # tables with nothing to head them -- a cover page is a layout grid
+            # whose values sit above their labels -- so an empty header is written
+            # above the delimiter. Promoting the first data row instead would
+            # claim a heading the filing never gave it.
+            rows.append("| " + " | ".join([""] * len(content_columns)) + " |")
+            rows.append("| " + " | ".join(["---"] * len(content_columns)) + " |")
 
         # Render data rows
         for expanded_row in expanded_data_rows:
@@ -534,7 +557,10 @@ class MarkdownRenderer:
         current_column = 0
 
         for cell in cells:
-            cell_text = cell.text().strip()
+            # One line per cell: a newline inside one ends the row where it sits,
+            # and the rest of the cell is left outside the table. Header cells are
+            # already flattened, in _combine_multi_row_headers; data rows were not.
+            cell_text = " ".join(cell.text().split())
 
             # Add the cell content
             expanded.append(cell_text)

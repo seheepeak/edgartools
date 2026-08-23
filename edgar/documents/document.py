@@ -129,6 +129,10 @@ class Section:
     _text_extractor: Optional[Any] = field(default=None, repr=False)  # Callback for lazy text extraction
     _html_source: Optional[str] = field(default=None, repr=False)  # HTML source for TOC table extraction
     _section_extractor: Optional[Any] = field(default=None, repr=False)  # Section extractor for TOC sections
+    # Element ordinals in Document.source_tree, never text/node-walk offsets.
+    # None means the detector cannot establish a DOM boundary (e.g. page index).
+    source_start: Optional[int] = None
+    source_end: Optional[int] = None
 
     @property
     def kind(self) -> str:
@@ -171,6 +175,16 @@ class Section:
         usable, this falls back to :meth:`text` so callers never get a
         regression versus the plain-text output.
         """
+        if self.detection_method == 'index' and self._text_extractor is not None:
+            # Index sections have lazy page slices, not children in self.node.
+            try:
+                rendered = self._text_extractor(self.name, format='markdown')
+                if rendered:
+                    return self._clean_boundary_artifacts(rendered)
+            except Exception as exc:
+                logger.debug("Index markdown render failed for section '%s': %s", self.name, exc)
+            return self.text()
+
         if self.detection_method == 'toc' and self._text_extractor is not None:
             rendered = self._markdown_from_toc_section()
             if rendered:
@@ -855,6 +869,40 @@ class Document:
     # Core properties
     root: Node
     metadata: DocumentMetadata = field(default_factory=DocumentMetadata)
+
+    # Opt-in source tracking. Keep proxies alive so node ordinals stay stable.
+    source_tree: Optional[Any] = field(default=None, repr=False)
+    _source_elements: list = field(default_factory=list, repr=False)
+    _source_order: dict = field(default_factory=dict, repr=False)
+
+    def source_position(self, node: Node) -> Optional[int]:
+        """The heading block's ordinal in source_tree, when tracking is enabled.
+
+        Inline headings directly under body remain inline. Both ends of a section
+        use this method, so the following Item label cannot leak into its neighbour.
+        """
+        position = node.metadata.get('source_position')
+        if position is None or not self._source_elements:
+            return None
+        element = self._source_elements[position]
+        from edgar.documents.strategies.document_builder import DocumentBuilder
+        blocks = DocumentBuilder.BLOCK_ELEMENTS | {'td', 'th', 'tr', 'li', 'dt', 'dd'}
+        candidate = element
+        while candidate.tag not in blocks:
+            parent = candidate.getparent()
+            if parent is None or parent.tag in {'html', 'body'}:
+                return position
+            # A page wrapper is not the heading's start when it already holds
+            # visible content. Do not move a later inline heading in front of
+            # the preceding Item (or the cover) merely to reach a block tag.
+            if (parent.text or '').strip() or any(
+                ''.join(sibling.itertext()).strip() or (sibling.tail or '').strip()
+                for sibling in candidate.itersiblings(preceding=True)
+            ):
+                return position
+            candidate = parent
+        # Locate by identity: lxml elements do not have source ordinals themselves.
+        return self._source_order[id(candidate)]
 
     # Cached extractions
     _sections: Optional[Sections] = field(default=None, init=False, repr=False)

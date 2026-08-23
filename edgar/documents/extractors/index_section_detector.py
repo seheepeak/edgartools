@@ -152,18 +152,25 @@ def _make_text_extractor(index, item_id: str):
     detection, and the result is memoised because a single item can be several
     megabytes of HTML (Citigroup's Item 8 is 9.3MB).
     """
-    cache: Dict[bool, str] = {}
+    cache: Dict[tuple, str] = {}
 
     def extract_text(section_name=None, **kwargs):
         clean = bool(kwargs.get('clean', True))
-        if clean in cache:
-            return cache[clean]
+        markdown = kwargs.get('format') == 'markdown'
+        key = (clean, markdown)
+        if key in cache:
+            return cache[key]
 
-        from edgar.documents import parse_html
+        from edgar.documents import ParserConfig
+        from edgar.documents.parser import HTMLParser
 
         item_html = index.extract_item_content(item_id)
-        text = parse_html(item_html).text() if item_html else ""
-        cache[clean] = text
+        if item_html:
+            parsed = HTMLParser(ParserConfig(detect_sections=False, extract_xbrl=False)).parse(item_html)
+            text = parsed.to_markdown() if markdown else parsed.text()
+        else:
+            text = ""
+        cache[key] = text
         return text
 
     return extract_text

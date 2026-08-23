@@ -1723,10 +1723,9 @@ class TOCAnalyzer:
         falls through to the canonical-Part key or the legacy parser (same path as
         GH #821, whose GS mislabel — Item 1 under Part II — is also a back-ref).
 
-        A detected part *before* the canonical Part is left untouched: that is a
-        coarse TOC with a single Part header preceding later-Part items (Item 7
-        listed under the lone "Part I" header), where the detected key is the
-        established behavior and dropping it would lose a real section.
+        An earlier Part header can remain in scope in a coarse TOC. Use the
+        canonical Part in that case; otherwise hybrid pattern detection emits
+        the same Item twice under different keys (CAT, P&G, Mastercard).
 
         Args:
             item_name: Normalized item name like "Item 1A"
@@ -1744,7 +1743,7 @@ class TOCAnalyzer:
                 can_rank = self._part_rank(canonical_part)
                 if cur_rank is not None and can_rank is not None and cur_rank > can_rank:
                     return None
-            effective_part = current_part
+            effective_part = canonical_part or current_part
         else:
             effective_part = canonical_part
         if effective_part:
@@ -2310,7 +2309,10 @@ class TOCAnalyzer:
                         max_item_num = self.schema.max_bare_item
                         bare_item_match = re.match(r'^([1-9]\d?)([A-Za-z]?)\.?\s*$', prev_text, re.IGNORECASE)
                         if (bare_item_match and 1 <= int(bare_item_match.group(1)) <= max_item_num
-                                and not self._cell_in_numbered_index(prev_sibling)):
+                                and not self._cell_in_numbered_index(prev_sibling)
+                                and not (re.fullmatch(r'\d+', (link_element.text_content() or '').strip())
+                                         and re.search(r'\b(?:see|refer\s+to)\b',
+                                                       td_element.text_content() or '', re.I))):
                             item_num = bare_item_match.group(1)
                             item_letter = bare_item_match.group(2).upper()
                             return f"Item {item_num}{item_letter}"
@@ -2376,7 +2378,9 @@ class TOCAnalyzer:
         column "Item" (Morgan Stanley: "Table of Contents | Part | Item |
         Page") or carries no header at all, so only a header row with an
         exact "Table"/"Figure"/… cell and no "Item" cell disqualifies the
-        bare numbers. Validating each row's link target instead does not
+        bare numbers. A financial-statements index can introduce its Notes
+        numbering after introductory rows, so preceding headers apply until an
+        explicit Item column starts a new index. Validating each row's link target instead does not
         work: many filers' TOC anchors land nowhere near the item heading,
         so demanding per-row corroboration silently dropped real items
         (MS 10-K: 19 item sections → 6).
@@ -2387,11 +2391,34 @@ class TOCAnalyzer:
                 table = table.getparent()
             if table is None:
                 return False
-            for header_row in table.xpath('./tr | ./thead/tr | ./tbody/tr')[:4]:
-                texts = [(c.text_content() or '').strip().rstrip(':').lower()
-                         for c in header_row.xpath('./td | ./th')]
-                if any(t in self._NUMBERED_INDEX_HEADERS for t in texts):
-                    return not any(t == 'item' for t in texts)
+            numbered_index = False
+            own_row = cell.getparent()
+            number_column = sum(int(c.get('colspan', '1')) for c in cell.itersiblings(preceding=True)
+                                if c.tag in ('td', 'th'))
+            for header_row in table.xpath('./tr | ./thead/tr | ./tbody/tr'):
+                texts, column = [], 0
+                for c in header_row.xpath('./td | ./th'):
+                    if column > number_column:
+                        break
+                    if not c.xpath('.//a[@href]'):
+                        texts.append(' '.join((c.text_content() or '').split()).rstrip(':').lower())
+                    column += int(c.get('colspan', '1'))
+                # A Notes/Exhibits entry in the title column does not change
+                # what numbers in the earlier number column mean. A separate
+                # "Note" label before the number still identifies a note row.
+                # Linked "Notes to ..." is an ordinary TOC entry, not a
+                # header that changes the numbering of following Item rows.
+                if 'item' in texts:
+                    numbered_index = False
+                elif any(t in self._NUMBERED_INDEX_HEADERS or re.fullmatch(
+                        r'notes? (?:on|to) (?:the )?(?:consolidated )?financial statements', t)
+                         for t in texts):
+                    numbered_index = True
+                # The first note may identify itself in a separate "Note"
+                # column on this same row, without a preceding header row.
+                if header_row is own_row:
+                    break
+            return numbered_index
         except Exception:
             logger.debug("Numbered-index header check failed", exc_info=True)
         return False
